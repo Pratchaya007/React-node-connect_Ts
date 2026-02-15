@@ -30,7 +30,7 @@ const login: RequestHandler = async (req , res) => {
     where: {email ,status: true}
   })
   if (!user){ //ไม่มีข้อมูล
-    return  res.status(409).json({message: ' invalid email or password '})
+    return  res.status(401).json({message: ' invalid email or password '})
   }
   const isMatch = await bcrypt.compare(password , user.password)//compare คือการเทียบ
   if (!isMatch){//ไม่มีรหัสที่เราเปรียบเทียบ
@@ -38,10 +38,18 @@ const login: RequestHandler = async (req , res) => {
   }
 
   const access_token = singnAccessJwt({id: user.id , role: user.role});
-  const refresh_token = singnRefreshJwt({id: user.id});
+  // const refresh_token = singnRefreshJwt({id: user.id});
   const {password: pass , ...userWithoutPassword} = user;
 
-  res.status(200).json({ access_token , user: userWithoutPassword })
+  res.cookie('access_token' , access_token , {
+    //สามารถกำหนด coolie ได้ในนี้
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge:  env.ACCESS_JWT_COOKIE_MAX_AGE //วันหมดอายุ
+  }).status(200).json({ user: userWithoutPassword });
+
+  // res.status(200).json({ access_token , user: userWithoutPassword })
 }
 
 export const authController = {register , login}

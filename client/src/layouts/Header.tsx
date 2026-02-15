@@ -7,6 +7,9 @@ const Header = () => {
         <h1 className="text-2xl font-bold text-white">Logo</h1>
       </div>
       <div className="flex gap-5 font-bold text-w">
+        <NavLink to="/">Home</NavLink>
+        <button>LogOut</button>
+        <NavLink to="/profile">Profile</NavLink>
         <NavLink to="/login">Login</NavLink>
         <NavLink to="/register">Register</NavLink>
       </div>
