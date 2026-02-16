@@ -4,6 +4,8 @@ import z from "zod"
 import { axios } from "../config/axios"
 import { toast } from "sonner"
 import { AxiosError } from "axios"
+import { useAuthStore } from "../store/useAuthStore"
+import { loginResponseSchema } from "../types/use.types"
 
 const loginSchema = z.object({
   email: z.email(),
@@ -17,12 +19,16 @@ const LoginPage = () => {
     defaultValues: {email: '' , password: ''},
     resolver: zodResolver(loginSchema)
   });
+  const setAuth = useAuthStore((state) => state.setAuth) //import zustand store ❗️
 
-const onSubmit : SubmitHandler = async (data : loginInput) => {
+
+const onSubmit : SubmitHandler<loginInput> = async (data) => {
   try{
-    const res = await axios.post('/auth/login' , data, 
-      // {withCredentials: true}
-    ); //บอกให้มันเก็บ cookie ด้วย
+    const res = await axios.post('/auth/login' , data); // {withCredentials: true}); //บอกให้มันเก็บ cookie ด้วย
+    const { user , access_token} =  loginResponseSchema.parse(res.data)
+    setAuth(user, access_token)
+    // const user = userSchema.parse(res.data.user)
+    // setAuth(user); //เรียกใ้ช้งาน method useAuth
     toast.success(' login succesfully ')
   }catch (err){
     if (err instanceof AxiosError){ //ดัก error มาจาก AxiosError

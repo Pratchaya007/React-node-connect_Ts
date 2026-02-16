@@ -1,55 +1,125 @@
 import type { RequestHandler } from "express";
 import { loginSchema, registerSchema } from "../validators/auth.validators.js";
-import bcrypt from 'bcrypt'
+import bcrypt from "bcrypt";
 import { env } from "../config/env.config.js";
 import { prisma } from "../db/prisma.js";
 import { PrismaClientKnownRequestError } from "../db/generated/prisma/internal/prismaNamespace.js";
-import { singnAccessJwt, singnRefreshJwt } from "../utils/token.js";
+import {
+  singnAccessJwt,
+  singnRefreshJwt,
+  verifyRefreshJwt,
+} from "../utils/token.js";
+import type { Request, Response } from "express";
+import { getUserPayload } from "../utils/auth.js";
+import jwt from "jsonwebtoken";
 
-const register: RequestHandler = async (req , res) => {
-  const  data = registerSchema.parse(req.body)
-  data.password = await bcrypt.hash(data.password, env.SALT_ROUND)
+const register: RequestHandler = async (req, res) => {
+  const data = registerSchema.parse(req.body);
+  data.password = await bcrypt.hash(data.password, env.SALT_ROUND);
 
-  try{
-    await prisma.user.create({ data })
-  }catch (err){
-    if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002'){
-      res.status(409).json({message: 'Email already in use'})
+  try {
+    await prisma.user.create({ data });
+  } catch (err) {
+    if (err instanceof PrismaClientKnownRequestError && err.code === "P2002") {
+      res.status(409).json({ message: "Email already in use" });
       return;
     }
-    throw err ;
+    throw err;
   }
 
-    res.status(201).json({message: ' register successfuly '})
+  res.status(201).json({ message: " register successfuly " });
+};
 
-}
-
-const login: RequestHandler = async (req , res) => {
-  const {email ,password} = loginSchema.parse(req.body);
+const login: RequestHandler = async (req, res) => {
+  const { email, password } = loginSchema.parse(req.body);
   const user = await prisma.user.findUnique({
-    where: {email ,status: true}
-  })
-  if (!user){ //ไม่มีข้อมูล
-    return  res.status(401).json({message: ' invalid email or password '})
+    where: { email, status: true },
+  });
+  if (!user) {
+    //ไม่มีข้อมูล
+    return res.status(401).json({ message: " invalid email or password " });
   }
-  const isMatch = await bcrypt.compare(password , user.password)//compare คือการเทียบ
-  if (!isMatch){//ไม่มีรหัสที่เราเปรียบเทียบ
-    return res.status(401).json({message : ' invalid email or password '})
+  const isMatch = await bcrypt.compare(password, user.password); //compare คือการเทียบ
+  if (!isMatch) {
+    //ไม่มีรหัสที่เราเปรียบเทียบ
+    return res.status(401).json({ message: " invalid email or password " });
   }
 
-  const access_token = singnAccessJwt({id: user.id , role: user.role});
-  // const refresh_token = singnRefreshJwt({id: user.id});
-  const {password: pass , ...userWithoutPassword} = user;
+  const access_token = singnAccessJwt({ id: user.id, role: user.role });
+  const refresh_token = singnRefreshJwt({ id: user.id }); //❗️
+  const { password: pass, ...userWithoutPassword } = user;
 
-  res.cookie('access_token' , access_token , {
-    //สามารถกำหนด coolie ได้ในนี้
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge:  env.ACCESS_JWT_COOKIE_MAX_AGE //วันหมดอายุ
-  }).status(200).json({ user: userWithoutPassword });
+  res
+    .cookie("refresh_token", refresh_token, {
+      //สามารถกำหนด coolie ได้ในนี้
+      httpOnly: true,
+      secure: env.NODE_ENV === "production",
+      sameSite: "strict",
+      // maxAge:  env.ACCESS_JWT_COOKIE_MAX_AGE //วันหมดอายุ
+      maxAge: env.REFRESH_JWT_COOKIE_MAX_AGE,
+      // path: '/auth/refresh' //ส่งเฉพาะ path ที่ refresh เท่านั่น
+    })
+    .status(200)
+    .json({ user: userWithoutPassword, access_token });
 
   // res.status(200).json({ access_token , user: userWithoutPassword })
-}
+};
 
-export const authController = {register , login}
+const getMe = async (req: Request, res: Response) => {
+  const payload = getUserPayload(req); // import auth.ts
+  const user = await prisma.user.findUnique({
+    where: { id: payload.id, status: true },
+    omit: { password: true },
+  });
+  if (!user) {
+    res
+      .status(403)
+      .json({ message: "user has been deleted or user is banned " });
+    return;
+  }
+  res.status(200).json({ user });
+};
+
+const logOut: RequestHandler = (req, res) => {
+  // fn LogOut
+  res.clearCookie("access_token").status(200).json({ message: "Log out" });
+};
+
+const refresh: RequestHandler = async (req, res) => {
+  const token = req.cookies.refresh_token;
+  if (typeof token !== "string") {
+    res.status(400).json({ message: "token is missing" });
+    return;
+  }
+  // console.log(token) มี
+  try {
+    const payload = verifyRefreshJwt(token); //import token.ts
+    const user = await prisma.user.findUnique({
+      where: { id: payload.id, status: true },
+      omit: { password: true },
+    });
+    if (!user) {
+      res.clearCookie("refresh_token", { path: "/auth" });
+      res
+        .status(403)
+        .json({ message: "user has been deleted or user is banned " });
+      return;
+    }
+    const access_token = singnAccessJwt({ id: user.id, role: user.role });
+    res.status(200).json({ access_token, user });
+  } catch (err) {
+    if (
+      err instanceof jwt.TokenExpiredError ||
+      err instanceof jwt.JsonWebTokenError
+    ) {
+      res.clearCookie("refresh_token", { path: "/auth" });
+      return  res.status(401).json({ message: " invalid token or token espired " });
+    }
+    console.error(err);
+    return res.status(500).json({
+      message: "internal server error",
+    });
+  }
+};
+
+export const authController = { register, login, getMe, logOut, refresh };

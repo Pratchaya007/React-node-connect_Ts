@@ -13,3 +13,8 @@ export  const userSchema = z.object({
 })
 
 export type User = z.infer<typeof userSchema>;
+
+export const loginResponseSchema = z.object({
+  user : userSchema,
+  access_token: z.jwt()
+})
