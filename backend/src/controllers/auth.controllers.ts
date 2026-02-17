@@ -12,6 +12,7 @@ import {
 import type { Request, Response } from "express";
 import { getUserPayload } from "../utils/auth.js";
 import jwt from "jsonwebtoken";
+import { v2 as cloudinary } from 'cloudinary';
 
 const register: RequestHandler = async (req, res) => {
   const data = registerSchema.parse(req.body);
@@ -87,13 +88,15 @@ const logOut: RequestHandler = (req, res) => {
 
 const refresh: RequestHandler = async (req, res) => {
   const token = req.cookies.refresh_token;
+  console.log('token',token) 
   if (typeof token !== "string") {
     res.status(400).json({ message: "token is missing" });
     return;
   }
-  // console.log(token) มี
+
   try {
     const payload = verifyRefreshJwt(token); //import token.ts
+    console.log('payload',payload)
     const user = await prisma.user.findUnique({
       where: { id: payload.id, status: true },
       omit: { password: true },
@@ -106,14 +109,17 @@ const refresh: RequestHandler = async (req, res) => {
       return;
     }
     const access_token = singnAccessJwt({ id: user.id, role: user.role });
+    console.log('token',access_token)
     res.status(200).json({ access_token, user });
   } catch (err) {
+    console.log(err)
     if (
       err instanceof jwt.TokenExpiredError ||
       err instanceof jwt.JsonWebTokenError
     ) {
       res.clearCookie("refresh_token", { path: "/auth" });
-      return  res.status(401).json({ message: " invalid token or token espired " });
+      res.status(401).json({ message: " invalid token or token espired " });
+      return;
     }
     console.error(err);
     return res.status(500).json({
@@ -122,4 +128,13 @@ const refresh: RequestHandler = async (req, res) => {
   }
 };
 
-export const authController = { register, login, getMe, logOut, refresh };
+export  const uploadProfileImage : RequestHandler = async (req ,res) => {
+  console.log(req.file);
+  if (req.file){
+    const result = await cloudinary.uploader.upload(req.file?.path)
+    console.log(result)
+  }
+  res.json();
+};
+
+export const authController = { register, login, getMe, logOut, refresh , uploadProfileImage };

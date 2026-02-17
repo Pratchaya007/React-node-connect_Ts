@@ -27,5 +27,5 @@ export const singnRefreshJwt = (payload: RefreshJwtPayload) : string =>
 })
 
 export const verifyRefreshJwt = (token: string):RefreshJwtPayload  => {
-  return  jwt.verify(token, env.REFRESH_JWT_SECRET) as RefreshJwtPayload;
+  return  jwt.verify(token, env.ACCESS_JWT_SECRET) as RefreshJwtPayload;
 }
